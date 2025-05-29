@@ -1,8 +1,7 @@
-streamlit>=1.25.0
-pillow==10.0.0
-numpy==1.25.2
-setuptools>=58.0.0
-scikit-image==0.21.0
-tensorflow==2.13.0
-keras==2.13.1
-opencv-python-headless==4.8.0.74
+streamlit==1.45.1
+numpy
+pil0low
+scikit-image
+opencv-python-headless==4.7.0.72
+tensorflow==2.12.0
+keras==2.12.

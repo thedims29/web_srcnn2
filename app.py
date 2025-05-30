@@ -15,11 +15,12 @@ import math
 # ----------------------------
 # Arsitektur SRCNN
 def build_srcnn():
-    inputs = tf.keras.Input(shape=(256, 256, 3))
-    x = tf.keras.layers.Conv2D(64, (9, 9), activation='relu', padding='same')(inputs)
-    x = tf.keras.layers.Conv2D(32, (1, 1), activation='relu', padding='same')(x)
-    outputs = tf.keras.layers.Conv2D(3, (5, 5), activation='sigmoid', padding='same')(x)
-    return tf.keras.Model(inputs, outputs)
+    input_img = Input(shape=(256, 256, 3), name='input_layer')
+    l1 = Conv2D(64, 9, padding='same', activation='relu', name='conv2d_1')(input_img)
+    l2 = Conv2D(32, 3, padding='same', activation='relu', name='conv2d_2')(l1)
+    l3 = Conv2D(16, 1, padding='same', activation='relu', name='conv2d_3')(l2)
+    l4 = Conv2D(3, 5, padding='same', activation='relu', name='conv2d_4')(l3)
+    return Model(inputs=input_img, outputs=l4)
 
 # Load model dan weights
 try:

@@ -9,7 +9,7 @@ from skimage.metrics import mean_squared_error, peak_signal_noise_ratio, structu
 import math
 
 # ----------------------------
-# Build SRCNN model
+# Build model SRCNN
 # ----------------------------
 def build_srcnn():
     input_img = Input(shape=(256, 256, 3), name='input_layer')
@@ -19,7 +19,9 @@ def build_srcnn():
     l4 = Conv2D(3, 5, padding='same', activation='relu', name='conv2d_4')(l3)
     return Model(inputs=input_img, outputs=l4)
 
-# Load model weights
+# ----------------------------
+# Load model dan weights
+# ----------------------------
 try:
     model_srcnn = build_srcnn()
     model_srcnn.load_weights("srcnn_model.h5")
@@ -28,31 +30,44 @@ except Exception as e:
     st.stop()
 
 # ----------------------------
-# Helper functions
+# Fungsi bantu
 # ----------------------------
 def add_blur(image, blur_level):
     if blur_level == 0:
         return image
+    # Pastikan gambar uint8 untuk cv2.GaussianBlur
+    if image.dtype != np.uint8:
+        image_uint8 = (image * 255).astype(np.uint8)
+    else:
+        image_uint8 = image
     ksize = 2 * blur_level + 1
-    return cv2.GaussianBlur(image, (ksize, ksize), 0)
+    blurred = cv2.GaussianBlur(image_uint8, (ksize, ksize), 0)
+    # Kembalikan ke float32 0-1
+    return blurred.astype(np.float32) / 255.0
 
 def predict_image(model, image):
-    # Model expects float32 input in [0,1]
     input_img = image.astype(np.float32)
-    input_img = np.expand_dims(input_img, axis=0)  # add batch dim
+    input_img = np.expand_dims(input_img, axis=0)  # batch dim
     pred = model.predict(input_img, verbose=0)
     pred = np.clip(pred[0], 0.0, 1.0)
     return pred
 
 def calculate_metrics(original, restored):
+    original = np.clip(original, 0, 1)
+    restored = np.clip(restored, 0, 1)
     mse_val = mean_squared_error(original, restored)
     rmse_val = math.sqrt(mse_val)
     psnr_val = peak_signal_noise_ratio(original, restored, data_range=1.0)
     try:
         ssim_val = structural_similarity(original, restored, channel_axis=-1, data_range=1.0)
-    except Exception:
+    except:
         ssim_val = 0.0
     return mse_val, rmse_val, psnr_val, ssim_val
+
+def prepare_for_display(img):
+    # img diasumsikan float32 0-1, convert ke uint8 0-255
+    img_disp = np.clip(img * 255.0, 0, 255).astype(np.uint8)
+    return img_disp
 
 # ----------------------------
 # Streamlit UI
@@ -64,47 +79,46 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     uploaded_file = st.file_uploader("Upload Citra (jpg/png/jpeg)", type=["jpg", "png", "jpeg"])
-    blur_level = st.slider("Tingkat Blur", 0, 10, 3)
-    proses = st.button("Proses")
+    blur_level = st.slider("Tingkat Blur", min_value=0, max_value=10, value=5)
+    if st.button("Proses"):
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file).convert("RGB").resize((256, 256))
+            image_np = np.array(image).astype(np.float32) / 255.0
 
-if proses and uploaded_file is not None:
-    # Load dan resize image ke 256x256
-    image = Image.open(uploaded_file).convert("RGB").resize((256,256))
-    image_np = np.array(image) / 255.0  # normalisasi ke [0,1]
+            blurred_image = add_blur(image_np, blur_level)
+            output_srcnn = predict_image(model_srcnn, blurred_image)
 
-    # Buat gambar blur (uint8)
-    blurred_uint8 = add_blur((image_np * 255).astype(np.uint8), blur_level)
-    blurred_norm = blurred_uint8.astype(np.float32) / 255.0
-
-    # Prediksi dengan SRCNN
-    output_srcnn = predict_image(model_srcnn, blurred_norm)
-
-    # Simpan hasil ke session state agar bisa dipakai di kolom lain
-    st.session_state['original'] = image_np
-    st.session_state['blurred'] = blurred_uint8  # tetap uint8 untuk display
-    st.session_state['srcnn'] = (output_srcnn * 255).astype(np.uint8)  # convert ke uint8 juga untuk display
+            # Simpan ke session_state agar dapat digunakan untuk display
+            st.session_state['original'] = image_np
+            st.session_state['blurred'] = blurred_image
+            st.session_state['srcnn'] = output_srcnn
 
 if 'original' in st.session_state:
-    with col1:
-        st.image(st.session_state['blurred'], caption="Citra Blur", use_container_width=True)
-    with col2:
-        st.image((st.session_state['original'] * 255).astype(np.uint8), caption="Original", use_container_width=True)
-    with col3:
-        st.image(st.session_state['srcnn'], caption="Hasil SRCNN", use_container_width=True)
+    img_blurred = prepare_for_display(st.session_state['blurred'])
+    img_original = prepare_for_display(st.session_state['original'])
+    img_srcnn = prepare_for_display(st.session_state['srcnn'])
 
-    mse_b, rmse_b, psnr_b, ssim_b = calculate_metrics(st.session_state['original'], st.session_state['blurred'] / 255.0)
-    mse_s, rmse_s, psnr_s, ssim_s = calculate_metrics(st.session_state['original'], st.session_state['srcnn'] / 255.0)
+    # Debug info
+    st.write("DEBUG shapes and dtypes:")
+    st.write(f"Blurred shape: {img_blurred.shape}, dtype: {img_blurred.dtype}")
+    st.write(f"Original shape: {img_original.shape}, dtype: {img_original.dtype}")
+    st.write(f"SRCNN shape: {img_srcnn.shape}, dtype: {img_srcnn.dtype}")
 
+    col1.image(img_blurred, caption="Citra Blur", use_container_width=True)
+    col2.image(img_original, caption="Citra Asli", use_container_width=True)
+    col3.image(img_srcnn, caption="Hasil SRCNN", use_container_width=True)
+
+    def render_metrics(col, title, target_img_uint8):
+        target = target_img_uint8.astype(np.float32) / 255.0
+        mse, rmse, psnr_val, ssim_val = calculate_metrics(st.session_state['original'], target)
+        with col:
+            st.markdown(f"**Parameter - {title}**")
+            st.markdown(f"MSE  : `{mse:.4f}`")
+            st.markdown(f"RMSE : `{rmse:.4f}`")
+            st.markdown(f"PSNR : `{psnr_val:.2f}`")
+            st.markdown(f"SSIM : `{ssim_val:.4f}`")
+
+    st.markdown("---")
     col4, col5 = st.columns(2)
-    with col4:
-        st.markdown("### Metrik Sebelum Restorasi (Blurred)")
-        st.markdown(f"MSE: {mse_b:.4f}")
-        st.markdown(f"RMSE: {rmse_b:.4f}")
-        st.markdown(f"PSNR: {psnr_b:.2f} dB")
-        st.markdown(f"SSIM: {ssim_b:.4f}")
-    with col5:
-        st.markdown("### Metrik Setelah Restorasi (SRCNN)")
-        st.markdown(f"MSE: {mse_s:.4f}")
-        st.markdown(f"RMSE: {rmse_s:.4f}")
-        st.markdown(f"PSNR: {psnr_s:.2f} dB")
-        st.markdown(f"SSIM: {ssim_s:.4f}")
+    render_metrics(col4, "Blurred", img_blurred)
+    render_metrics(col5, "SRCNN", img_srcnn)

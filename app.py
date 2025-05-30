@@ -11,10 +11,10 @@ from skimage.metrics import mean_squared_error, peak_signal_noise_ratio, structu
 import math
 
 # ----------------------------
-# Load SRCNN model
+# Load SRCNN model (.h5)
 # ----------------------------
 try:
-    model_srcnn = tf.keras.models.load_model("srcnn_model.keras", compile=False)
+    model_srcnn = tf.keras.models.load_model("srcnn_model.h5", compile=False)
 except Exception as e:
     st.error(f"Gagal memuat model SRCNN: {str(e)}")
     st.stop()

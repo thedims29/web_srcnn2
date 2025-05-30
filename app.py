@@ -40,15 +40,13 @@ def add_blur(image, blur_level):
         image_uint8 = (image * 255).astype(np.uint8)
     else:
         image_uint8 = image
-    ksize = 2 * blur_level + 1
-    blurred = cv2.GaussianBlur(image_uint8, (ksize, ksize), 0)
+    blurred = cv2.GaussianBlur(image_uint8, (2 * blur_level + 1, 2 * blur_level + 1), 0)
     # Kembalikan ke float32 0-1
     return blurred.astype(np.float32) / 255.0
 
 def predict_image(model, image):
     input_img = image.astype(np.float32)
-    input_img = np.expand_dims(input_img, axis=0)  # batch dim
-    pred = model.predict(input_img, verbose=0)
+    pred = model.predict(np.expand_dims(input_img, axis=0), verbose=0)
     pred = np.clip(pred[0], 0.0, 1.0)
     return pred
 
@@ -82,33 +80,48 @@ with col1:
     blur_level = st.slider("Tingkat Blur", min_value=0, max_value=10, value=5)
     if st.button("Proses"):
         if uploaded_file is not None:
+            # Load dan resize image ke 256x256
             image = Image.open(uploaded_file).convert("RGB").resize((256, 256))
             image_np = np.array(image).astype(np.float32) / 255.0
 
             blurred_image = add_blur(image_np, blur_level)
+
             output_srcnn = predict_image(model_srcnn, blurred_image)
 
-            # Simpan ke session_state agar dapat digunakan untuk display
             st.session_state['original'] = image_np
             st.session_state['blurred'] = blurred_image
             st.session_state['srcnn'] = output_srcnn
 
+# ----------------------------
+# Tampilkan hasil dan metrik
+# ----------------------------
 if 'original' in st.session_state:
     img_blurred = prepare_for_display(st.session_state['blurred'])
     img_original = prepare_for_display(st.session_state['original'])
     img_srcnn = prepare_for_display(st.session_state['srcnn'])
 
-    # Debug info
+    # Debug tambahan untuk memastikan data valid
     st.write("DEBUG shapes and dtypes:")
     st.write(f"Blurred shape: {img_blurred.shape}, dtype: {img_blurred.dtype}")
     st.write(f"Original shape: {img_original.shape}, dtype: {img_original.dtype}")
     st.write(f"SRCNN shape: {img_srcnn.shape}, dtype: {img_srcnn.dtype}")
 
-    col1.image(img_blurred, caption="Citra Blur", use_container_width=True)
-    col2.image(img_original, caption="Citra Asli", use_container_width=True)
-    col3.image(img_srcnn, caption="Hasil SRCNN", use_container_width=True)
+    st.write("min/max blurred:", img_blurred.min(), img_blurred.max())
+    st.write("min/max original:", img_original.min(), img_original.max())
+    st.write("min/max srcnn:", img_srcnn.min(), img_srcnn.max())
+
+    # Pastikan contiguous array
+    img_blurred = np.ascontiguousarray(img_blurred)
+    img_original = np.ascontiguousarray(img_original)
+    img_srcnn = np.ascontiguousarray(img_srcnn)
+
+    # Tampilkan gambar dengan parameter yang kompatibel
+    col1.image(img_blurred, caption="Citra Blur", use_column_width=True)
+    col2.image(img_original, caption="Citra Asli", use_column_width=True)
+    col3.image(img_srcnn, caption="Hasil SRCNN", use_column_width=True)
 
     def render_metrics(col, title, target_img_uint8):
+        # Convert uint8 0-255 ke float 0-1 utk metrik
         target = target_img_uint8.astype(np.float32) / 255.0
         mse, rmse, psnr_val, ssim_val = calculate_metrics(st.session_state['original'], target)
         with col:

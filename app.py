@@ -92,6 +92,12 @@ with col1:
             st.session_state['blurred'] = blurred_image
             st.session_state['srcnn'] = output_srcnn
 
+# Fungsi untuk memastikan gambar siap tampil di Streamlit
+def prepare_for_display(img):
+    # img diasumsikan float32 0-1, convert ke uint8 0-255
+    img_disp = np.clip(img * 255.0, 0, 255).astype(np.uint8)
+    return img_disp
+
 # ----------------------------
 # Tampilkan hasil dan metrik
 # ----------------------------
@@ -100,12 +106,20 @@ if 'original' in st.session_state:
     img_original = prepare_for_display(st.session_state['original'])
     img_srcnn = prepare_for_display(st.session_state['srcnn'])
 
+    # Debug info
+    st.write("DEBUG shapes and dtypes:")
+    st.write(f"Blurred shape: {img_blurred.shape}, dtype: {img_blurred.dtype}")
+    st.write(f"Original shape: {img_original.shape}, dtype: {img_original.dtype}")
+    st.write(f"SRCNN shape: {img_srcnn.shape}, dtype: {img_srcnn.dtype}")
+
     col1.image(img_blurred, caption="Citra Blur", use_container_width=True)
     col2.image(img_original, caption="Citra Asli", use_container_width=True)
     col3.image(img_srcnn, caption="Hasil SRCNN", use_container_width=True)
 
-    def render_metrics(col, title, target):
-        mse, rmse, psnr_val, ssim_val = calculate_metrics(st.session_state['original'], target / 255.0)
+    def render_metrics(col, title, target_img_uint8):
+        # Convert uint8 0-255 ke float 0-1 utk metrik
+        target = target_img_uint8.astype(np.float32) / 255.0
+        mse, rmse, psnr_val, ssim_val = calculate_metrics(st.session_state['original'], target)
         with col:
             st.markdown(f"**Parameter - {title}**")
             st.markdown(f"MSE  : `{mse:.4f}`")

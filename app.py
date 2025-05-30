@@ -1,19 +1,16 @@
-import os
-import urllib.request
 import streamlit as st
 import numpy as np
 import cv2
-import tensorflow as tf
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Conv2D, Input
 from PIL import Image
+import tensorflow as tf
+from tensorflow.keras.layers import Conv2D, Input
+from tensorflow.keras.models import Model
 from skimage.metrics import mean_squared_error, peak_signal_noise_ratio, structural_similarity
 import math
 
 # ----------------------------
-# Load SRCNN model (.h5)
+# Bangun arsitektur SRCNN
 # ----------------------------
-# Arsitektur SRCNN
 def build_srcnn():
     input_img = Input(shape=(256, 256, 3), name='input_layer')
     l1 = Conv2D(64, 9, padding='same', activation='relu', name='conv2d_1')(input_img)
@@ -22,29 +19,23 @@ def build_srcnn():
     l4 = Conv2D(3, 5, padding='same', activation='relu', name='conv2d_4')(l3)
     return Model(inputs=input_img, outputs=l4)
 
-# Load model dan weights
-try:
-    model_srcnn = build_srcnn()
-    model_srcnn.load_weights("srcnn_model.h5")
-except Exception as e:
-    st.error(f"Gagal memuat model SRCNN: {str(e)}")
-    st.stop()
-
-
 # ----------------------------
 # Fungsi bantu
 # ----------------------------
 def add_blur(image, blur_level):
     if blur_level == 0:
         return image
+    # Gaussian blur dengan kernel ganjil (2*blur_level+1)
     return cv2.GaussianBlur(image, (2 * blur_level + 1, 2 * blur_level + 1), 0)
 
 def predict_image(model, image):
+    # image: float32 dengan nilai di [0,1]
     input_img = image.astype(np.float32)
     pred = model.predict(np.expand_dims(input_img, axis=0), verbose=0)
     return np.clip(pred[0], 0.0, 1.0)
 
 def calculate_metrics(original, restored):
+    # pastikan keduanya float32 dan di-range [0,1]
     original = np.clip(original, 0, 1)
     restored = np.clip(restored, 0, 1)
     mse_val = mean_squared_error(original, restored)
@@ -56,10 +47,26 @@ def calculate_metrics(original, restored):
         ssim_val = 0.0
     return mse_val, rmse_val, psnr_val, ssim_val
 
+def prepare_for_display(img):
+    # Pastikan image dalam format uint8 0-255 untuk st.image
+    img = np.clip(img, 0, 1)
+    img_uint8 = (img * 255).astype(np.uint8)
+    return img_uint8
+
 # ----------------------------
-# Streamlit UI
+# Muat model SRCNN
 # ----------------------------
-st.set_page_config(layout="wide", page_title="Restorasi Citra")
+try:
+    model_srcnn = build_srcnn()
+    model_srcnn.load_weights("srcnn_model.h5")
+except Exception as e:
+    st.error(f"Gagal memuat model SRCNN: {str(e)}")
+    st.stop()
+
+# ----------------------------
+# UI Streamlit
+# ----------------------------
+st.set_page_config(layout="wide", page_title="Restorasi Citra dengan SRCNN")
 st.title("🖼️ Restorasi Citra dengan SRCNN")
 
 col1, col2, col3 = st.columns([1.2, 1.2, 1.2])
@@ -67,28 +74,36 @@ col1, col2, col3 = st.columns([1.2, 1.2, 1.2])
 with col1:
     uploaded_file = st.file_uploader("Upload Citra", type=["jpg", "png", "jpeg"])
     blur_level = st.slider("Tingkat Blur", min_value=0, max_value=10, value=5)
-    if st.button("Proses"):
-        if uploaded_file is not None:
+    proses = st.button("Proses")
+
+    if proses:
+        if uploaded_file is None:
+            st.warning("Silakan unggah file gambar terlebih dahulu.")
+        else:
+            # Load gambar dan resize ke 256x256 RGB
             image = Image.open(uploaded_file).convert("RGB")
             image = image.resize((256, 256))
-            image_np = np.array(image) / 255.0
+            image_np = np.array(image).astype(np.float32) / 255.0  # float32 [0,1]
 
-            blurred_image = add_blur((image_np * 255).astype(np.uint8), blur_level)
-            blurred_image = blurred_image.astype(np.float32) / 255.0
+            # Tambah blur gaussian
+            blurred_uint8 = add_blur((image_np * 255).astype(np.uint8), blur_level)
+            blurred = blurred_uint8.astype(np.float32) / 255.0  # kembali ke float32 [0,1]
 
-            output_srcnn = predict_image(model_srcnn, blurred_image)
+            # Prediksi dengan SRCNN
+            output_srcnn = predict_image(model_srcnn, blurred)
 
+            # Simpan ke session_state agar bisa ditampilkan di kolom lain
             st.session_state['original'] = image_np
-            st.session_state['blurred'] = blurred_image
+            st.session_state['blurred'] = blurred
             st.session_state['srcnn'] = output_srcnn
 
 # ----------------------------
-# Tampilkan hasil dan metrik
+# Tampilkan hasil dan metrik evaluasi
 # ----------------------------
 if 'original' in st.session_state:
-    col1.image(st.session_state['blurred'], caption="Citra Blur", use_container_width=True)
-    col2.image(st.session_state['original'], caption="Before", use_container_width=True)
-    col3.image(st.session_state['srcnn'], caption="SRCNN", use_container_width=True)
+    col1.image(prepare_for_display(st.session_state['blurred']), caption="Citra Blur", use_container_width=True)
+    col2.image(prepare_for_display(st.session_state['original']), caption="Before", use_container_width=True)
+    col3.image(prepare_for_display(st.session_state['srcnn']), caption="SRCNN", use_container_width=True)
 
     def render_metrics(col, title, target):
         mse, rmse, psnr_val, ssim_val = calculate_metrics(st.session_state['original'], target)

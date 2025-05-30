@@ -13,11 +13,22 @@ import math
 # ----------------------------
 # Load SRCNN model (.h5)
 # ----------------------------
+# Arsitektur SRCNN
+def build_srcnn():
+    inputs = tf.keras.Input(shape=(256, 256, 3))
+    x = tf.keras.layers.Conv2D(64, (9, 9), activation='relu', padding='same')(inputs)
+    x = tf.keras.layers.Conv2D(32, (1, 1), activation='relu', padding='same')(x)
+    outputs = tf.keras.layers.Conv2D(3, (5, 5), activation='sigmoid', padding='same')(x)
+    return tf.keras.Model(inputs, outputs)
+
+# Load model dan weights
 try:
-    model_srcnn = tf.keras.models.load_model("srcnn_model.h5", compile=False)
+    model_srcnn = build_srcnn()
+    model_srcnn.load_weights("srcnn_model.h5")
 except Exception as e:
     st.error(f"Gagal memuat model SRCNN: {str(e)}")
     st.stop()
+
 
 # ----------------------------
 # Fungsi bantu
